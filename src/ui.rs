@@ -3,9 +3,9 @@
 use std::{collections::HashMap, hash::Hash};
 
 use egui::{
-    collapsing_header::paint_default_icon, epaint::Shadow, pos2, response::Flags, vec2, Align,
-    Color32, CornerRadius, Frame, Id, Layout, Margin, Modifiers, PointerButton, Pos2, Rect, Sense,
-    Shape, Stroke, StrokeKind, Style, Ui, UiBuilder, Vec2,
+    collapsing_header::paint_default_icon, emath::TSTransform, epaint::Shadow, pos2,
+    response::Flags, vec2, Align, Color32, CornerRadius, Frame, Id, Layout, Margin, Modifiers,
+    PointerButton, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Style, Ui, UiBuilder, Vec2,
 };
 
 use crate::{InPin, InPinId, Node, NodeId, OutPin, OutPinId, Snarl};
@@ -688,6 +688,15 @@ impl<T> Snarl<T> {
             let mut snarl_state =
                 SnarlState::load(ui.ctx(), snarl_id, pivot, viewport, self, style);
 
+            let offset = snarl_state.offset();
+            let scale = snarl_state.scale();
+
+            let mut current_trasnform = TSTransform::new(offset, scale);
+            viewer.current_transform(&mut current_trasnform, self);
+
+            snarl_state.set_offset(current_trasnform.translation);
+            snarl_state.set_scale(current_trasnform.scaling);
+
             ui.style_mut().zoom(snarl_state.scale());
 
             // let mut node_style: Style = (**ui.style()).clone();
@@ -904,7 +913,7 @@ impl<T> Snarl<T> {
             if snarl_state.has_new_wires()
                 && ui.input(|x| x.pointer.button_down(PointerButton::Secondary))
             {
-                let _ = snarl_state.take_wires();
+                let _ = snarl_state.take_new_wires();
                 bg_r.flags.remove(Flags::CLICKED);
             }
 
@@ -925,7 +934,7 @@ impl<T> Snarl<T> {
             let mut wire_end_pos = input.hover_pos.unwrap_or_default();
 
             if drag_released {
-                let new_wires = snarl_state.take_wires();
+                let new_wires = snarl_state.take_new_wires();
                 if new_wires.is_some() {
                     ui.ctx().request_repaint();
                 }
@@ -949,36 +958,34 @@ impl<T> Snarl<T> {
                         }
                     }
                     (Some(new_wires), None) if bg_r.hovered() => {
-                        // A new pin is dropped without connecting it anywhere. This
-                        // will open a pop-up window for creating a new node.
-                        snarl_state.revert_take_wires(new_wires);
+                        let pins = match &new_wires {
+                            NewWires::In(x) => AnyPins::In(x),
+                            NewWires::Out(x) => AnyPins::Out(x),
+                        };
 
-                        // Force open context menu.
-                        bg_r.flags.insert(Flags::LONG_TOUCHED);
+                        if viewer.has_dropped_wire_menu(pins, self) {
+                            // A wire is dropped without connecting to a pin.
+                            // Show context menu for the wire drop.
+                            snarl_state.set_new_wires_menu(new_wires);
+
+                            // Force open context menu.
+                            bg_r.flags.insert(Flags::LONG_TOUCHED);
+                        }
                     }
                     _ => {}
                 }
             }
 
-            // Open graph menu when right-clicking on empty space.
-            let mut is_menu_visible = false;
-
             if let Some(interact_pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
-                if snarl_state.has_new_wires() {
-                    let pins = match snarl_state.new_wires().unwrap() {
+                if let Some(new_wires) = snarl_state.take_new_wires_menu() {
+                    let pins = match &new_wires {
                         NewWires::In(x) => AnyPins::In(x),
                         NewWires::Out(x) => AnyPins::Out(x),
                     };
 
                     if viewer.has_dropped_wire_menu(pins, self) {
                         bg_r.context_menu(|ui| {
-                            is_menu_visible = true;
-                            if !snarl_state.is_link_menu_open() {
-                                // Mark link menu is now visible.
-                                snarl_state.open_link_menu();
-                            }
-
-                            let pins = match snarl_state.new_wires().unwrap() {
+                            let pins = match &new_wires {
                                 NewWires::In(x) => AnyPins::In(x),
                                 NewWires::Out(x) => AnyPins::Out(x),
                             };
@@ -993,18 +1000,15 @@ impl<T> Snarl<T> {
                                 pins,
                                 self,
                             );
+
+                            // Even though menu could be closed in `show_dropped_wire_menu`,
+                            // we need to revert the new wires here, because menu state is inaccessible.
+                            // Next frame context menu won't be shown and wires will be removed.
+                            snarl_state.set_new_wires_menu(new_wires);
                         });
                     }
-                } else if snarl_state.is_link_menu_open()
-                    || viewer.has_graph_menu(interact_pos, self)
-                {
+                } else if viewer.has_graph_menu(interact_pos, self) {
                     bg_r.context_menu(|ui| {
-                        is_menu_visible = true;
-                        if !snarl_state.is_link_menu_open() {
-                            // Mark link menu is now visible.
-                            snarl_state.open_link_menu();
-                        }
-
                         viewer.show_graph_menu(
                             snarl_state.screen_pos_to_graph(ui.cursor().min, viewport),
                             ui,
@@ -1013,11 +1017,6 @@ impl<T> Snarl<T> {
                         );
                     });
                 }
-            }
-
-            if !is_menu_visible && snarl_state.is_link_menu_open() {
-                // It seems that the context menu was closed. Remove new wires.
-                snarl_state.close_link_menu();
             }
 
             match snarl_state.new_wires() {
@@ -1193,10 +1192,12 @@ impl<T> Snarl<T> {
 
                 match input.hover_pos {
                     Some(hover_pos) if r.rect.contains(hover_pos) => {
-                        if input.modifiers.shift {
-                            snarl_state.add_new_wire_in(in_pin.id);
-                        } else if input.secondary_pressed {
-                            snarl_state.remove_new_wire_in(in_pin.id);
+                        if snarl_state.has_new_wires_in() {
+                            if input.modifiers.shift {
+                                snarl_state.add_new_wire_in(in_pin.id);
+                            } else if input.secondary_pressed {
+                                snarl_state.remove_new_wire_in(in_pin.id);
+                            }
                         }
                         pin_hovered = Some(AnyPin::In(in_pin.id));
                         visual_pin_rect = visual_pin_rect.scale_from_center(1.2);
@@ -1332,10 +1333,12 @@ impl<T> Snarl<T> {
                 let mut visual_pin_rect = r.rect;
                 match input.hover_pos {
                     Some(hover_pos) if r.rect.contains(hover_pos) => {
-                        if input.modifiers.shift {
-                            snarl_state.add_new_wire_out(out_pin.id);
-                        } else if input.secondary_pressed {
-                            snarl_state.remove_new_wire_out(out_pin.id);
+                        if snarl_state.has_new_wires_out() {
+                            if input.modifiers.shift {
+                                snarl_state.add_new_wire_out(out_pin.id);
+                            } else if input.secondary_pressed {
+                                snarl_state.remove_new_wire_out(out_pin.id);
+                            }
                         }
                         pin_hovered = Some(AnyPin::Out(out_pin.id));
                         visual_pin_rect = visual_pin_rect.scale_from_center(1.2);

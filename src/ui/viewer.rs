@@ -1,3 +1,4 @@
+use egui::emath::TSTransform;
 use egui::{Painter, Pos2, Rect, Style, Ui};
 
 use crate::{InPin, InPinId, NodeId, OutPin, OutPinId, Snarl};
@@ -362,5 +363,16 @@ pub trait SnarlViewer<T> {
         if let Some(background) = background {
             background.draw(viewport, snarl_style, style, painter);
         }
+    }
+
+    /// Informs the viewer what is the current transform of the snarl view
+    /// and allows viewer to override it.
+    ///
+    /// This method is called in the beginning of the graph rendering.
+    ///
+    /// By default it does nothing.
+    #[inline]
+    fn current_transform(&mut self, transform: &mut TSTransform, snarl: &mut Snarl<T>) {
+        let _ = (transform, snarl);
     }
 }

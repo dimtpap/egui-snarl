@@ -128,13 +128,13 @@ pub struct SnarlState {
 
     new_wires: Option<NewWires>,
 
+    /// Flag indicating that new wires are owned by the menu now.
+    new_wires_menu: bool,
+
     id: Id,
 
     /// Flag indicating that the graph state is dirty must be saved.
     dirty: bool,
-
-    /// Flag indicating that the link menu is open.
-    is_link_menu_open: bool,
 
     /// Order of nodes to draw.
     draw_order: Vec<NodeId>,
@@ -156,9 +156,9 @@ struct SnarlStateData {
     offset: Vec2,
     scale: f32,
     target_scale: f32,
-    is_link_menu_open: bool,
     draw_order: Vec<NodeId>,
     new_wires: Option<NewWires>,
+    new_wires_menu: bool,
     rect_selection: Option<RectSelect>,
     selected_nodes: Vec<NodeId>,
 }
@@ -168,7 +168,7 @@ struct SnarlStateDataHeader {
     offset: Vec2,
     scale: f32,
     target_scale: f32,
-    is_link_menu_open: bool,
+    new_wires_menu: bool,
 }
 
 impl SnarlStateData {
@@ -180,7 +180,7 @@ impl SnarlStateData {
                     offset: self.offset,
                     scale: self.scale,
                     target_scale: self.target_scale,
-                    is_link_menu_open: self.is_link_menu_open,
+                    new_wires_menu: self.new_wires_menu,
                 },
             );
 
@@ -223,8 +223,8 @@ impl SnarlStateData {
                 offset: small.offset,
                 scale: small.scale,
                 target_scale: small.target_scale,
-                is_link_menu_open: small.is_link_menu_open,
                 new_wires,
+                new_wires_menu: small.new_wires_menu,
                 rect_selection,
                 selected_nodes,
                 draw_order,
@@ -282,7 +282,7 @@ impl SnarlState {
             scale: data.scale,
             target_scale: data.target_scale,
             new_wires: data.new_wires,
-            is_link_menu_open: data.is_link_menu_open,
+            new_wires_menu: data.new_wires_menu,
             id,
             dirty,
             draw_order: data.draw_order,
@@ -321,7 +321,7 @@ impl SnarlState {
             scale,
             target_scale: scale,
             new_wires: None,
-            is_link_menu_open: false,
+            new_wires_menu: false,
             id,
             dirty: true,
             draw_order: Vec::new(),
@@ -340,12 +340,20 @@ impl SnarlState {
                 scale: self.scale,
                 target_scale: self.target_scale,
                 new_wires: self.new_wires,
-                is_link_menu_open: self.is_link_menu_open,
+                new_wires_menu: self.new_wires_menu,
                 draw_order: self.draw_order,
                 rect_selection: self.rect_selection,
                 selected_nodes: self.selected_nodes,
             };
             data.save(cx, self.id);
+        }
+    }
+
+    pub fn set_scale(&mut self, scale: f32) {
+        if self.scale != scale {
+            self.scale = scale;
+            self.target_scale = scale;
+            self.dirty = true;
         }
     }
 
@@ -433,90 +441,128 @@ impl SnarlState {
 
     pub fn start_new_wire_in(&mut self, pin: InPinId) {
         self.new_wires = Some(NewWires::In(vec![pin]));
+        self.new_wires_menu = false;
         self.dirty = true;
     }
 
     pub fn start_new_wire_out(&mut self, pin: OutPinId) {
         self.new_wires = Some(NewWires::Out(vec![pin]));
+        self.new_wires_menu = false;
         self.dirty = true;
     }
 
     pub fn start_new_wires_in(&mut self, pins: &[InPinId]) {
         self.new_wires = Some(NewWires::In(pins.to_vec()));
+        self.new_wires_menu = false;
         self.dirty = true;
     }
 
     pub fn start_new_wires_out(&mut self, pins: &[OutPinId]) {
         self.new_wires = Some(NewWires::Out(pins.to_vec()));
+        self.new_wires_menu = false;
         self.dirty = true;
     }
 
     pub fn add_new_wire_in(&mut self, pin: InPinId) {
-        if let Some(NewWires::In(pins)) = &mut self.new_wires {
-            if !pins.contains(&pin) {
-                pins.push(pin);
-                self.dirty = true;
-            }
+        debug_assert!(self.new_wires_menu == false);
+        let Some(NewWires::In(pins)) = &mut self.new_wires else {
+            unreachable!();
+        };
+
+        if !pins.contains(&pin) {
+            pins.push(pin);
+            self.dirty = true;
         }
     }
 
     pub fn add_new_wire_out(&mut self, pin: OutPinId) {
-        if let Some(NewWires::Out(pins)) = &mut self.new_wires {
-            if !pins.contains(&pin) {
-                pins.push(pin);
-                self.dirty = true;
-            }
+        debug_assert!(self.new_wires_menu == false);
+        let Some(NewWires::Out(pins)) = &mut self.new_wires else {
+            unreachable!();
+        };
+
+        if !pins.contains(&pin) {
+            pins.push(pin);
+            self.dirty = true;
         }
     }
 
     pub fn remove_new_wire_in(&mut self, pin: InPinId) {
-        if let Some(NewWires::In(pins)) = &mut self.new_wires {
-            if let Some(idx) = pins.iter().position(|p| *p == pin) {
-                pins.swap_remove(idx);
-                self.dirty = true;
-            }
+        debug_assert!(self.new_wires_menu == false);
+        let Some(NewWires::In(pins)) = &mut self.new_wires else {
+            unreachable!();
+        };
+
+        if let Some(idx) = pins.iter().position(|p| *p == pin) {
+            pins.swap_remove(idx);
+            self.dirty = true;
         }
     }
 
     pub fn remove_new_wire_out(&mut self, pin: OutPinId) {
-        if let Some(NewWires::Out(pins)) = &mut self.new_wires {
-            if let Some(idx) = pins.iter().position(|p| *p == pin) {
-                pins.swap_remove(idx);
-                self.dirty = true;
-            }
+        debug_assert!(self.new_wires_menu == false);
+        let Some(NewWires::Out(pins)) = &mut self.new_wires else {
+            unreachable!();
+        };
+
+        if let Some(idx) = pins.iter().position(|p| *p == pin) {
+            pins.swap_remove(idx);
+            self.dirty = true;
         }
     }
 
     pub const fn has_new_wires(&self) -> bool {
-        self.new_wires.is_some()
+        match (self.new_wires.as_ref(), self.new_wires_menu) {
+            (Some(_), false) => true,
+            _ => false,
+        }
+    }
+
+    pub const fn has_new_wires_in(&self) -> bool {
+        matches!(
+            (&self.new_wires, self.new_wires_menu),
+            (Some(NewWires::In(_)), false)
+        )
+    }
+
+    pub const fn has_new_wires_out(&self) -> bool {
+        matches!(
+            (&self.new_wires, self.new_wires_menu),
+            (Some(NewWires::Out(_)), false)
+        )
     }
 
     pub const fn new_wires(&self) -> Option<&NewWires> {
-        self.new_wires.as_ref()
+        match (&self.new_wires, self.new_wires_menu) {
+            (Some(new_wires), false) => Some(new_wires),
+            _ => None,
+        }
     }
 
-    pub fn take_wires(&mut self) -> Option<NewWires> {
-        self.dirty |= self.new_wires.is_some();
-        self.new_wires.take()
+    pub fn take_new_wires(&mut self) -> Option<NewWires> {
+        match (&self.new_wires, self.new_wires_menu) {
+            (Some(_), false) => {
+                self.dirty = true;
+                self.new_wires.take()
+            }
+            _ => None,
+        }
     }
 
-    pub(crate) fn revert_take_wires(&mut self, wires: NewWires) {
+    pub(crate) fn take_new_wires_menu(&mut self) -> Option<NewWires> {
+        match (&self.new_wires, self.new_wires_menu) {
+            (Some(_), true) => {
+                self.dirty = true;
+                self.new_wires.take()
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_new_wires_menu(&mut self, wires: NewWires) {
+        debug_assert!(self.new_wires.is_none());
         self.new_wires = Some(wires);
-    }
-
-    pub(crate) fn open_link_menu(&mut self) {
-        self.is_link_menu_open = true;
-        self.dirty = true;
-    }
-
-    pub(crate) fn close_link_menu(&mut self) {
-        self.new_wires = None;
-        self.is_link_menu_open = false;
-        self.dirty = true;
-    }
-
-    pub(crate) const fn is_link_menu_open(&self) -> bool {
-        self.is_link_menu_open
+        self.new_wires_menu = true;
     }
 
     pub(crate) fn update_draw_order<T>(&mut self, snarl: &Snarl<T>) -> Vec<NodeId> {
