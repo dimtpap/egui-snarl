@@ -813,8 +813,8 @@ impl<T> Snarl<T> {
                         if wire_hit {
                             hovered_wire = Some(wire);
 
-                            //Remove hovered wire by second click
-                            hovered_wire_disconnect |= bg_r.clicked_by(PointerButton::Secondary);
+                            //Remove hovered wire by click
+                            hovered_wire_disconnect |= bg_r.clicked();
 
                             // Background is not hovered then.
                             bg_r.flags.remove(Flags::HOVERED);
@@ -852,23 +852,23 @@ impl<T> Snarl<T> {
                 }
             }
 
-            if bg_r.drag_started_by(PointerButton::Primary) && input.modifiers.shift {
+            if bg_r.drag_started_by(PointerButton::Secondary) {
                 let screen_pos = input.interact_pos.unwrap_or_else(|| viewport.center());
                 let graph_pos = snarl_state.screen_pos_to_graph(screen_pos, viewport);
                 snarl_state.start_rect_selection(graph_pos);
             }
 
-            if bg_r.dragged_by(PointerButton::Primary) {
+            if bg_r.dragged_by(PointerButton::Secondary) {
                 if snarl_state.is_rect_selection() && input.hover_pos.is_some() {
                     let screen_pos = input.hover_pos.unwrap();
                     let graph_pos = snarl_state.screen_pos_to_graph(screen_pos, viewport);
                     snarl_state.update_rect_selection(graph_pos);
-                } else {
-                    snarl_state.pan(-bg_r.drag_delta());
                 }
+            } else if bg_r.dragged_by(PointerButton::Primary) {
+                snarl_state.pan(-bg_r.drag_delta())
             }
 
-            if bg_r.drag_stopped_by(PointerButton::Primary) {
+            if bg_r.drag_stopped() {
                 if let Some(select_rect) = snarl_state.rect_selection() {
                     let select_nodes = node_rects.into_iter().filter_map(|(id, rect)| {
                         let select = if style.get_select_rect_contained() {
@@ -884,7 +884,7 @@ impl<T> Snarl<T> {
                         }
                     });
 
-                    if input.modifiers.command {
+                    if input.modifiers.shift {
                         snarl_state.deselect_many_nodes(select_nodes);
                     } else {
                         snarl_state.select_many_nodes(!input.modifiers.shift, select_nodes);
@@ -926,7 +926,7 @@ impl<T> Snarl<T> {
                 snarl_state.set_offset(centers_sum * snarl_state.scale());
             }
 
-            if input.modifiers.command && bg_r.clicked_by(PointerButton::Primary) {
+            if bg_r.clicked_by(PointerButton::Secondary) {
                 snarl_state.deselect_all_nodes();
             }
 
@@ -1171,18 +1171,7 @@ impl<T> Snarl<T> {
                     }
                 }
                 if r.drag_started_by(PointerButton::Primary) {
-                    if input.modifiers.command {
-                        snarl_state.start_new_wires_out(&in_pin.remotes);
-                        if !input.modifiers.shift {
-                            self.drop_inputs(in_pin.id);
-                            if !self.nodes.contains(node.0) {
-                                // If removed
-                                return;
-                            }
-                        }
-                    } else {
-                        snarl_state.start_new_wire_in(in_pin.id);
-                    }
+                    snarl_state.start_new_wire_in(in_pin.id);
                 }
                 if r.drag_stopped() {
                     drag_released = true;
@@ -1312,19 +1301,7 @@ impl<T> Snarl<T> {
                     }
                 }
                 if r.drag_started_by(PointerButton::Primary) {
-                    if input.modifiers.command {
-                        snarl_state.start_new_wires_in(&out_pin.remotes);
-
-                        if !input.modifiers.shift {
-                            self.drop_outputs(out_pin.id);
-                            if !self.nodes.contains(node.0) {
-                                // If removed
-                                return;
-                            }
-                        }
-                    } else {
-                        snarl_state.start_new_wire_out(out_pin.id);
-                    }
+                    snarl_state.start_new_wire_out(out_pin.id);
                 }
                 if r.drag_stopped() {
                     drag_released = true;
@@ -1529,7 +1506,7 @@ impl<T> Snarl<T> {
             node_moved = Some((node, snarl_state.screen_vec_to_graph(r.drag_delta())));
         }
 
-        if r.clicked_by(PointerButton::Primary) || r.dragged_by(PointerButton::Primary) {
+        if r.clicked_by(PointerButton::Secondary) || r.dragged_by(PointerButton::Secondary) {
             if input.modifiers.shift {
                 snarl_state.select_one_node(input.modifiers.command, node);
             } else if input.modifiers.command {
