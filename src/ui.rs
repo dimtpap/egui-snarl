@@ -1,6 +1,6 @@
 //! This module provides functionality for showing [`Snarl`] graph in [`Ui`].
 
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
 use egui::{
     collapsing_header::paint_default_icon, emath::TSTransform, epaint::Shadow, pos2,
@@ -655,8 +655,13 @@ impl<T> Snarl<T> {
     }
 
     /// Render [`Snarl`] using given viewer and style into the [`Ui`].
-    pub fn show<V>(&mut self, viewer: &mut V, style: &SnarlStyle, id_salt: impl Hash, ui: &mut Ui)
-    where
+    pub fn show<V>(
+        &mut self,
+        viewer: &mut V,
+        style: &SnarlStyle,
+        id_salt: impl egui::AsIdSalt,
+        ui: &mut Ui,
+    ) where
         V: SnarlViewer<T>,
     {
         #![allow(clippy::too_many_lines)]

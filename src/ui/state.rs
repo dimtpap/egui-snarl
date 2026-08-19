@@ -1,6 +1,6 @@
-use std::hash::Hash;
+use ahash::HashSet;
 
-use egui::{ahash::HashSet, style::Spacing, Context, Id, Pos2, Rect, Ui, Vec2};
+use egui::{style::Spacing, Context, Id, Pos2, Rect, Ui, Vec2};
 
 use crate::{InPinId, NodeId, OutPinId, Snarl};
 
@@ -683,14 +683,18 @@ impl<T> Snarl<T> {
     /// Use `id_salt` and [`Ui`] that were used in [`Snarl::show`] method.
     ///
     /// If same [`Ui`] is not available, use [`Snarl::get_selected_nodes_at`] and provide `id` of the [`Ui`] used in [`Snarl::show`] method.
-    pub fn get_selected_nodes(id_salt: impl Hash, ui: &mut Ui) -> Vec<NodeId> {
+    pub fn get_selected_nodes(id_salt: impl egui::AsIdSalt, ui: &mut Ui) -> Vec<NodeId> {
         Self::get_selected_nodes_at(id_salt, ui.id(), ui.ctx())
     }
 
     /// Returns nodes selected in the UI.
     ///
     /// Use `id_salt` as well as [`Id`] and [`Context`] of the [`Ui`] that were used in [`Snarl::show`] method.
-    pub fn get_selected_nodes_at(id_salt: impl Hash, id: Id, cx: &Context) -> Vec<NodeId> {
+    pub fn get_selected_nodes_at(
+        id_salt: impl egui::AsIdSalt,
+        id: Id,
+        cx: &Context,
+    ) -> Vec<NodeId> {
         let snarl_id = id.with(id_salt);
 
         cx.data(|d| {
